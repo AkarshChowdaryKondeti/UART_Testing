@@ -1,0 +1,15 @@
+__pycache__/
+.pytest_cache/
+.venv/
+.codex
+*.pyc
+*.pyo
+*.pyd
+
+frontend/node_modules/
+frontend/dist/
+
+uart_control_center.db
+uart_results.csv
+
+.DS_Store
