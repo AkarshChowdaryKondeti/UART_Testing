@@ -3,7 +3,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+UARTSetup = Literal["usb_loopback", "dual_usb", "usb_gpio"]
+
+
 class UARTConfig(BaseModel):
+    setup_type: UARTSetup = "dual_usb"
     tx_port: str
     rx_port: str
     baud: int = 9600
@@ -28,6 +32,7 @@ class CommunicationResponse(BaseModel):
 
 class TestRunRequest(BaseModel):
     mode: Literal["all", "custom"] = "all"
+    setup_type: UARTSetup = "dual_usb"
     tx_port: str = "/dev/ttyUSB0"
     rx_port: str = "/dev/ttyUSB1"
     timeout: float = 1.0
@@ -56,6 +61,7 @@ class TestRunStatus(BaseModel):
 
 class SavedProfileRequest(BaseModel):
     name: str
+    setup_type: UARTSetup = "dual_usb"
     tx_port: str = "/dev/ttyUSB0"
     rx_port: str = "/dev/ttyUSB1"
     timeout: float = 1.0

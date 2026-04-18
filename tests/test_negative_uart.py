@@ -73,7 +73,7 @@ def test_disconnection_during_transfer(uart_pair, record_result):
 
 
 @pytest.mark.hardware
-def test_wrong_connection_behavior(uart_pair, record_result):
+def test_wrong_connection_behavior(uart_pair, require_distinct_uart_endpoints, record_result):
     tx_ser, rx_ser = uart_pair(baud=9600)
     send_data(tx_ser, b"connection-check")
     rx_ser.close()

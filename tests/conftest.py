@@ -11,11 +11,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.database import create_manual_test_run, init_db, save_test_result, update_test_run
-from backend.services import detect_default_uart_pair
+from backend.services import detect_default_uart_config, infer_setup_type, setup_requires_distinct_ports
 from uart.comm import close_uart, open_uart
 
 
-DEFAULT_TX_PORT, DEFAULT_RX_PORT = detect_default_uart_pair()
+DEFAULT_SETUP, DEFAULT_TX_PORT, DEFAULT_RX_PORT = detect_default_uart_config()
 DEFAULT_TIMEOUT = 1.0
 DEFAULT_SOAK_SECONDS = 5.0
 TEST_RUN_ID = os.getenv("UART_TEST_RUN_ID", f"manual-{uuid.uuid4()}")
@@ -71,6 +71,7 @@ def _save_report_result(item, report):
 
 
 def pytest_addoption(parser):
+    parser.addoption("--uart-setup", action="store", default=os.getenv("UART_SETUP_TYPE", DEFAULT_SETUP))
     parser.addoption("--tx-port", action="store", default=os.getenv("UART_TX_PORT", DEFAULT_TX_PORT))
     parser.addoption("--rx-port", action="store", default=os.getenv("UART_RX_PORT", DEFAULT_RX_PORT))
     parser.addoption("--uart-timeout", action="store", type=float, default=float(os.getenv("UART_TIMEOUT", DEFAULT_TIMEOUT)))
@@ -80,6 +81,14 @@ def pytest_addoption(parser):
 def _require_port(path):
     if not Path(path).exists():
         pytest.skip(f"UART port not available: {path}")
+
+
+@pytest.fixture(scope="session")
+def uart_setup(pytestconfig):
+    setup_type = pytestconfig.getoption("--uart-setup")
+    tx_port = pytestconfig.getoption("--tx-port")
+    rx_port = pytestconfig.getoption("--rx-port")
+    return setup_type or infer_setup_type(tx_port, rx_port)
 
 
 @pytest.fixture(scope="session")
@@ -103,10 +112,17 @@ def soak_seconds(pytestconfig):
 
 
 @pytest.fixture
-def uart_ports_available(tx_port, rx_port):
+def uart_ports_available(tx_port, rx_port, uart_setup):
     _require_port(tx_port)
-    _require_port(rx_port)
+    if setup_requires_distinct_ports(uart_setup):
+        _require_port(rx_port)
     return tx_port, rx_port
+
+
+@pytest.fixture
+def require_distinct_uart_endpoints(uart_setup):
+    if not setup_requires_distinct_ports(uart_setup):
+        pytest.skip("This test requires two independent UART endpoints and is not valid for usb_loopback setup.")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -138,16 +154,21 @@ def record_result(request):
 
 
 @pytest.fixture
-def uart_pair(tx_port, rx_port, uart_timeout):
+def uart_pair(tx_port, rx_port, uart_timeout, uart_setup):
     _require_port(tx_port)
-    _require_port(rx_port)
+    if setup_requires_distinct_ports(uart_setup):
+        _require_port(rx_port)
 
     opened = []
 
     def _open_pair(baud=9600, data_bits=8, parity="N", stop_bits=1):
         tx_ser = open_uart(tx_port, baud, data_bits, parity, stop_bits, timeout=uart_timeout)
-        rx_ser = open_uart(rx_port, baud, data_bits, parity, stop_bits, timeout=uart_timeout)
-        opened.extend([tx_ser, rx_ser])
+        if setup_requires_distinct_ports(uart_setup):
+            rx_ser = open_uart(rx_port, baud, data_bits, parity, stop_bits, timeout=uart_timeout)
+            opened.extend([tx_ser, rx_ser])
+        else:
+            rx_ser = tx_ser
+            opened.append(tx_ser)
         return tx_ser, rx_ser
 
     yield _open_pair

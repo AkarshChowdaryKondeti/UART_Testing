@@ -54,6 +54,8 @@ def _build_pytest_command(request):
 
     command.extend(
         [
+            "--uart-setup",
+            request.setup_type,
             "--tx-port",
             request.tx_port,
             "--rx-port",

@@ -4,6 +4,7 @@ import { fetchPorts, getCommunicationLogs, runCommunication } from "../api";
 
 
 const defaultConfig = {
+  setup_type: "dual_usb",
   tx_port: "/dev/ttyUSB0",
   rx_port: "/dev/ttyUSB1",
   baud: 9600,
@@ -39,6 +40,15 @@ function getDistinctPortSelection(current, nextPorts) {
   return { tx_port: txPort, rx_port: rxPort };
 }
 
+function getSetupAwarePortSelection(current, nextPorts) {
+  if (current.setup_type === "usb_loopback") {
+    const selectedPort = nextPorts.includes(current.tx_port) ? current.tx_port : (nextPorts[0] ?? current.tx_port);
+    return { tx_port: selectedPort, rx_port: selectedPort };
+  }
+
+  return getDistinctPortSelection(current, nextPorts);
+}
+
 
 function Field({ label, children }) {
   return (
@@ -64,7 +74,7 @@ export default function CommunicationPanel() {
       const nextPorts = filterVisiblePorts(portsData.ports ?? []);
       setPorts(nextPorts);
       setLogs(logsData.logs ?? []);
-      setForm((current) => ({ ...current, ...getDistinctPortSelection(current, nextPorts) }));
+      setForm((current) => ({ ...current, ...getSetupAwarePortSelection(current, nextPorts) }));
     } catch (err) {
       setError(err.message);
     }
@@ -76,6 +86,15 @@ export default function CommunicationPanel() {
 
   function updateField(key, value) {
     setForm((current) => {
+      if (key === "setup_type") {
+        const next = { ...current, setup_type: value };
+        return { ...next, ...getSetupAwarePortSelection(next, ports) };
+      }
+
+      if (current.setup_type === "usb_loopback" && (key === "tx_port" || key === "rx_port")) {
+        return { ...current, tx_port: value, rx_port: value };
+      }
+
       if (key === "tx_port") {
         const rxCandidates = ports.filter((port) => port !== value);
         const nextRx = value === current.rx_port ? (rxCandidates[0] ?? value) : current.rx_port;
@@ -92,9 +111,9 @@ export default function CommunicationPanel() {
     });
   }
 
-  const hasEnoughPorts = ports.length >= 2;
+  const hasEnoughPorts = form.setup_type === "usb_loopback" ? ports.length >= 1 : ports.length >= 2;
   const txOptions = buildPortOptions(form.tx_port, form.rx_port, ports);
-  const rxOptions = buildPortOptions(form.rx_port, form.tx_port, ports);
+  const rxOptions = form.setup_type === "usb_loopback" ? txOptions : buildPortOptions(form.rx_port, form.tx_port, ports);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -102,7 +121,7 @@ export default function CommunicationPanel() {
     setError("");
     setResult(null);
     try {
-      if (form.tx_port === form.rx_port) {
+      if (form.setup_type !== "usb_loopback" && form.tx_port === form.rx_port) {
         throw new Error("TX and RX ports must be different devices.");
       }
       const response = await runCommunication({
@@ -147,8 +166,16 @@ export default function CommunicationPanel() {
           </select>
         </Field>
 
+        <Field label="UART Setup">
+          <select value={form.setup_type} onChange={(event) => updateField("setup_type", event.target.value)}>
+            <option value="usb_loopback">One USB-UART Loopback</option>
+            <option value="dual_usb">Two USB-UART Adapters</option>
+            <option value="usb_gpio">USB UART + Raspberry Pi GPIO UART</option>
+          </select>
+        </Field>
+
         <Field label="RX Port">
-          <select value={form.rx_port} onChange={(event) => updateField("rx_port", event.target.value)}>
+          <select value={form.rx_port} onChange={(event) => updateField("rx_port", event.target.value)} disabled={form.setup_type === "usb_loopback"}>
             {rxOptions.map((port) => (
               <option key={port} value={port}>
                 {port}
@@ -228,7 +255,7 @@ export default function CommunicationPanel() {
       </form>
 
       {error ? <p className="error-box">{error}</p> : null}
-      {!hasEnoughPorts ? <p className="error-box">Connect at least two UART ports to choose different TX and RX devices.</p> : null}
+      {!hasEnoughPorts ? <p className="error-box">{form.setup_type === "usb_loopback" ? "Connect one UART adapter for loopback testing." : "Connect at least two UART ports to choose different TX and RX devices."}</p> : null}
 
       {result ? (
         <div className="result-card report-card">

@@ -27,7 +27,7 @@ def test_basic_send_receive(uart_pair, fixed_payload, record_result):
 
 
 @pytest.mark.hardware
-def test_bidirectional_transfer(uart_pair, record_result):
+def test_bidirectional_transfer(uart_pair, require_distinct_uart_endpoints, record_result):
     baud = 9600
     data_bits = 8
     parity = "N"
@@ -56,7 +56,7 @@ def test_bidirectional_transfer(uart_pair, record_result):
 
 
 @pytest.mark.hardware
-def test_true_duplex_exchange(uart_pair, record_result):
+def test_true_duplex_exchange(uart_pair, require_distinct_uart_endpoints, record_result):
     baud = 115200
     data_bits = 8
     parity = "N"

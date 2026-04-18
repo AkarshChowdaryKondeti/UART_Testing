@@ -19,6 +19,9 @@ TEST_FILE_MAP = {
     "negative": "test_negative_uart.py",
 }
 
+GPIO_UART_PORTS = {"/dev/serial0", "/dev/serial1", "/dev/ttyAMA0", "/dev/ttyS0"}
+USB_UART_MARKERS = ("/ttyUSB", "/ttyACM", "/serial/by-id/")
+
 
 def list_uart_ports():
     detected_ports = []
@@ -36,6 +39,26 @@ def list_uart_ports():
     serial_aliases = glob.glob("/dev/serial0") + glob.glob("/dev/serial1")
     ports = sorted(set(detected_ports + fallback_ports + stable_symlinks + serial_aliases))
     return ports
+
+
+def is_gpio_uart_port(port: str) -> bool:
+    return port in GPIO_UART_PORTS
+
+
+def is_usb_uart_port(port: str) -> bool:
+    return any(marker in port for marker in USB_UART_MARKERS)
+
+
+def setup_requires_distinct_ports(setup_type: str) -> bool:
+    return setup_type != "usb_loopback"
+
+
+def infer_setup_type(tx_port: str, rx_port: str) -> str:
+    if tx_port and rx_port and tx_port == rx_port:
+        return "usb_loopback"
+    if (is_usb_uart_port(tx_port) and is_gpio_uart_port(rx_port)) or (is_gpio_uart_port(tx_port) and is_usb_uart_port(rx_port)):
+        return "usb_gpio"
+    return "dual_usb"
 
 
 def detect_default_uart_pair():
@@ -68,6 +91,24 @@ def detect_default_uart_pair():
     return tx_port, rx_port
 
 
+def detect_default_uart_config():
+    ports = [port for port in list_uart_ports() if Path(port).exists()]
+    usb_ports = [port for port in ports if is_usb_uart_port(port)]
+    gpio_ports = [port for port in ports if is_gpio_uart_port(port)]
+
+    if usb_ports and gpio_ports:
+        return "usb_gpio", usb_ports[0], gpio_ports[0]
+    if len(usb_ports) >= 2:
+        return "dual_usb", usb_ports[0], usb_ports[1]
+    if len(ports) >= 2:
+        return infer_setup_type(ports[0], ports[1]), ports[0], ports[1]
+    if ports:
+        return "usb_loopback", ports[0], ports[0]
+
+    tx_port, rx_port = detect_default_uart_pair()
+    return "dual_usb", tx_port, rx_port
+
+
 def encode_payload(payload: str, mode: str) -> bytes:
     if mode == "hex":
         cleaned = payload.replace(" ", "")
@@ -95,8 +136,9 @@ def normalize_uart_error(exc: Exception, port: str) -> Exception:
 def run_communication(config, payload: bytes, read_delay: float):
     tx_ser = None
     rx_ser = None
+    setup_type = getattr(config, "setup_type", None) or infer_setup_type(config.tx_port, config.rx_port)
     try:
-        if config.tx_port == config.rx_port:
+        if setup_requires_distinct_ports(setup_type) and config.tx_port == config.rx_port:
             raise ValueError("TX and RX ports must be different serial devices")
 
         try:
@@ -111,22 +153,26 @@ def run_communication(config, payload: bytes, read_delay: float):
         except Exception as exc:
             raise normalize_uart_error(exc, config.tx_port) from exc
 
-        try:
-            rx_ser = open_uart(
-                config.rx_port,
-                config.baud,
-                config.data_bits,
-                config.parity,
-                config.stop_bits,
-                timeout=config.timeout,
-            )
-        except Exception as exc:
-            raise normalize_uart_error(exc, config.rx_port) from exc
+        if setup_requires_distinct_ports(setup_type):
+            try:
+                rx_ser = open_uart(
+                    config.rx_port,
+                    config.baud,
+                    config.data_bits,
+                    config.parity,
+                    config.stop_bits,
+                    timeout=config.timeout,
+                )
+            except Exception as exc:
+                raise normalize_uart_error(exc, config.rx_port) from exc
+        else:
+            rx_ser = tx_ser
 
         received, elapsed = measure_transfer_time(tx_ser, rx_ser, payload, delay=read_delay)
         return received, elapsed
     finally:
         with suppress(Exception):
             close_uart(tx_ser)
-        with suppress(Exception):
-            close_uart(rx_ser)
+        if rx_ser is not tx_ser:
+            with suppress(Exception):
+                close_uart(rx_ser)

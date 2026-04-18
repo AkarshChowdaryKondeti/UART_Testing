@@ -35,7 +35,7 @@ def test_uart_configurations(uart_pair, record_result, baud, data_bits, parity, 
 
 
 @pytest.mark.hardware
-def test_mismatched_baud_behavior(uart_ports_available, uart_timeout, record_result):
+def test_mismatched_baud_behavior(uart_ports_available, uart_timeout, require_distinct_uart_endpoints, record_result):
     from uart.comm import close_uart, open_uart, send_and_receive
 
     tx_port, rx_port = uart_ports_available

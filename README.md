@@ -1,6 +1,6 @@
 # UART Control Center
 
-UART Control Center is a structured full-stack UART validation project for Raspberry Pi or Linux systems using two USB-to-UART adapters.
+UART Control Center is a structured full-stack UART validation project for Raspberry Pi or Linux systems using common UART lab setups such as a single USB-UART loopback, two USB-to-UART adapters, or a USB UART paired with Raspberry Pi GPIO UART.
 
 It combines:
 
@@ -169,6 +169,12 @@ React UI:
 
 ## Hardware setup
 
+Supported project setups:
+
+- `usb_loopback`: one USB-to-UART adapter with its `TX` tied to its own `RX`, and `GND` connected
+- `dual_usb`: two USB-to-UART adapters cross-connected
+- `usb_gpio`: one USB-to-UART adapter cross-connected with Raspberry Pi GPIO UART
+
 For two USB-to-UART adapters:
 
 - adapter A `TX` -> adapter B `RX`
@@ -179,6 +185,12 @@ Default ports:
 
 - `TX`: `/dev/ttyUSB0`
 - `RX`: `/dev/ttyUSB1`
+
+For one USB-to-UART loopback:
+
+- adapter `TX` -> same adapter `RX`
+- use the same serial device for both TX and RX in the app or pytest
+- tests that require two independent UART endpoints, such as duplex and mismatched-baud checks, are skipped automatically
 
 For Raspberry Pi GPIO UART, common device names are:
 
